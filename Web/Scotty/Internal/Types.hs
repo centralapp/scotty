@@ -14,6 +14,7 @@ import           Blaze.ByteString.Builder (Builder)
 import           Control.Applicative
 import           Control.Exception (Exception)
 import qualified Control.Exception as E
+import           Control.Monad (MonadPlus (..))
 import           Control.Monad.Base (MonadBase, liftBase, liftBaseDefault)
 import           Control.Monad.Catch (MonadCatch, catch, MonadThrow, throwM)
 import           Control.Monad.Error.Class
@@ -185,7 +186,7 @@ instance (Monad m, ScottyError e) => MonadPlus (ActionT e m) where
             Left  _ -> runExceptT n
             Right r -> return $ Right r
 
-instance MonadTrans (ActionT e) where
+instance ScottyError e => MonadTrans (ActionT e) where
     lift = ActionT . lift . lift . lift
 
 instance (ScottyError e, Monad m) => MonadError (ActionError e) (ActionT e m) where
@@ -204,7 +205,7 @@ instance (MonadThrow m, ScottyError e) => MonadThrow (ActionT e m) where
 instance (MonadCatch m, ScottyError e) => MonadCatch (ActionT e m) where
     catch (ActionT m) f = ActionT (m `catch` (runAM . f))
 
-instance MonadTransControl (ActionT e) where
+instance ScottyError e => MonadTransControl (ActionT e) where
      type StT (ActionT e) a = StT (StateT ScottyResponse) (StT (ReaderT ActionEnv) (StT (ExceptT (ActionError e)) a))
      liftWith = \f ->
         ActionT $  liftWith $ \run  ->
