@@ -126,7 +126,7 @@ spec = do
           request "POST" "/upload" [("Content-Type","multipart/form-data; boundary=--33")]
             (BL.replicate 1025 $ c2w 'a') `shouldRespondWith` 413
           request "POST" "/upload" [("Content-Type","multipart/form-data; boundary=--33")]
-            (BL.replicate 1023 $ c2w 'a') `shouldRespondWith` 200
+            (BL.replicate 1024 $ c2w 'a') `shouldRespondWith` 200
 
     describe "text" $ do
       let modernGreekText :: IsString a => a

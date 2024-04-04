@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Web.Scotty.Util
     ( lazyTextToStrictByteString
     , strictByteStringToLazyText
@@ -21,7 +22,7 @@ import Control.Exception (throw)
 import Network.HTTP.Types
 
 import qualified Data.ByteString as B
-import qualified Data.Text as TP (pack)
+import qualified Data.Text as TP (pack, unwords)
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Encoding as ES
 import qualified Data.Text.Encoding.Error as ES
@@ -78,16 +79,25 @@ socketDescription sock = do
 
 -- return request body or throw an exception if request body too big
 readRequestBody :: IO B.ByteString -> ([B.ByteString] -> IO [B.ByteString]) -> Maybe Kilobytes ->IO [B.ByteString]
-readRequestBody rbody prefix maxSize = do
-  b <- rbody
-  if B.null b then
-       prefix []
-    else
-      do
-        checkBodyLength maxSize 
-        readRequestBody rbody (prefix . (b:)) maxSize
-    where checkBodyLength :: Maybe Kilobytes ->  IO ()
-          checkBodyLength (Just maxSize') = prefix [] >>= \bodySoFar -> when (isBigger bodySoFar maxSize') readUntilEmpty
-          checkBodyLength Nothing = return ()
-          isBigger bodySoFar maxSize' = (B.length . B.concat $ bodySoFar) > maxSize' * 1024
-          readUntilEmpty = rbody >>= \b -> if B.null b then throw (RequestException (ES.encodeUtf8 . TP.pack $ "Request is too big Jim!") status413) else readUntilEmpty
+readRequestBody rbody prefix mMaxSize = do
+  -- check the size of the body so far, throw exceptions (not ideal) to stop.
+  checkBodyLength 
+  -- get the next chunk.
+  nextChunk <- rbody
+  -- stop if the next chunk is empty (indicating end of stream) otherwise, recurse. 
+  if B.null nextChunk then bodySoFarIO 
+    else readRequestBody rbody (prefix
+                                . (nextChunk:) -- push the current chunk at the top of the input to prefix. 
+                               ) mMaxSize
+  where
+    checkBodyLength :: IO ()
+    checkBodyLength = do
+          bodySoFar <- bodySoFarIO 
+          when (isBigger bodySoFar) tooLargeEx
+    isBigger bodySoFar  = case mMaxSize of
+      Just maxSize -> (B.length . B.concat $ bodySoFar) > maxSize * 1024
+      Nothing -> False 
+    tooLargeEx =
+      let msg = TP.unwords [ "Request larger than configured:", maybe "" (TP.pack . show) mMaxSize ] 
+      in throw $ RequestException (ES.encodeUtf8 msg) status413
+    bodySoFarIO = prefix []
